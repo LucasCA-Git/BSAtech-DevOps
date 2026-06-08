@@ -16,8 +16,11 @@ services:
 
       url: http://localhost:2368
 
-    ports:
-      - "2368:2368"
+    # ports:
+    #   - "2368:2368"
+
+    expose:
+      - "2368"
 
     volumes:
       - ghost_data:/var/lib/ghost/content
@@ -39,6 +42,18 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+
+  nginx:
+    image: nginx:alpine
+
+    depends_on:
+      - ghost
+
+    ports:
+      - "80:80"
+
+    volumes:
+      - ./nginx/conf.d/default.conf:/etc/nginx/conf.d/default.conf:ro
 
 volumes:
   mysql_data:
