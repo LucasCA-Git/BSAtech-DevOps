@@ -1,6 +1,6 @@
 services:
   ghost:
-    image: ghost:5
+    image: lucascalecrim/bsatech-ghost:1.0
 
     depends_on:
       mysql:
