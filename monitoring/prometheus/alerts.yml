@@ -1,0 +1,10 @@
+groups:
+  - name: disk-alerts
+    rules:
+      - alert: HighDiskUsage
+        expr: (1 - node_filesystem_avail_bytes{fstype!="tmpfs"} / node_filesystem_size_bytes{fstype!="tmpfs"}) > 0.8
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          description: "Disk usage above 80%"
