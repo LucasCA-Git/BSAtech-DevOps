@@ -1,62 +1,165 @@
 services:
+  cert-generator:
+    image: alpine:latest
+    container_name: cert-generator
+    volumes:
+      - ./nginx/certs:/certs
+      - ./scripts/init-certs.sh:/init.sh:ro
+    entrypoint: sh -c "apk add --no-cache openssl && sh /init.sh"
+
   ghost:
     image: lucascalecrim/bsatech-ghost:1.0
-
+    container_name: bsatech-ghost
     depends_on:
       mysql:
         condition: service_healthy
-
     environment:
       database__client: mysql
-
       database__connection__host: mysql
       database__connection__user: ${MYSQL_USER}
       database__connection__password: ${MYSQL_PASSWORD}
       database__connection__database: ${MYSQL_DATABASE}
-
-      url: http://localhost:2368
-
-    # ports:
-    #   - "2368:2368"
-
+      url: https://localhost
     expose:
       - "2368"
-
     volumes:
       - ghost_data:/var/lib/ghost/content
+    networks:
+      - bsatech-net
 
   mysql:
     image: mysql:8.0
-
+    container_name: mysql-db
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE}
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-
     volumes:
       - mysql_data:/var/lib/mysql
-
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
       timeout: 5s
       retries: 10
+    networks:
+      - bsatech-net
+
+  mysql-exporter:
+    image: prom/mysqld-exporter:latest
+    container_name: mysql-exporter
+    ports:
+      - "9104:9104"
+    environment:
+      - MYSQLD_EXPORTER_PASSWORD=${MYSQL_PASSWORD}
+    command:
+      - "--mysqld.username=${MYSQL_USER}"
+      - "--mysqld.address=mysql-db:3306"
+      - "--no-collect.slave_status"
+      - "--no-collect.slave_hosts"
+    depends_on:
+      - mysql
+    networks:
+      - bsatech-net
 
   nginx:
     image: nginx:alpine
-
+    container_name: nginx-proxy
     depends_on:
-      - ghost
-
+      ghost:
+        condition: service_started
+      cert-generator:
+        condition: service_completed_successfully
     ports:
       - "80:80"
       - "443:443"
-
     volumes:
       - ./nginx/conf.d/default.conf:/etc/nginx/conf.d/default.conf:ro
       - ./nginx/certs:/etc/nginx/certs:ro
+    networks:
+      - bsatech-net
 
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:latest
+    container_name: nginx-exporter
+    ports:
+      - "9113:9113"
+    command:
+      - "-nginx.scrape-uri=http://nginx-proxy:8080/stub_status"
+    depends_on:
+      - nginx
+    networks:
+      - bsatech-net
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    volumes:
+      - ./monitoring/prometheus:/etc/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - ghost
+      - mysql-exporter
+      - node-exporter
+      - cadvisor
+      - nginx-exporter
+    networks:
+      - bsatech-net
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+    depends_on:
+      - prometheus
+    networks:
+      - bsatech-net
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    ports:
+      - "9100:9100"
+    networks:
+      - bsatech-net
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: cadvisor
+    ports:
+      - "8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks:
+      - bsatech-net
+
+  environment-validator:
+    image: alpine:latest
+    container_name: environment-validator
+    volumes:
+      - ./scripts/validate.sh:/validate.sh:ro
+    entrypoint: sh -c "apk add --no-cache curl && sh /validate.sh"
+    depends_on:
+      nginx:
+        condition: service_started
+      grafana:
+        condition: service_started
+      mysql-exporter:
+        condition: service_started
+    networks:
+      - bsatech-net
+
+networks:
+  bsatech-net:
+    driver: bridge
 
 volumes:
   mysql_data:
