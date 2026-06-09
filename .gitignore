@@ -2,3 +2,5 @@
 
 nginx/certs/*
 !nginx/certs/.gitkeep
+scripts/test-data
+backup
