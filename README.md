@@ -401,7 +401,7 @@ ls -lh "$PROJECT_ROOT/backup" | tail -n 1
 ```
 
 - O restore captura esse backup ao realizar o ./restore.sh [Bckup]
-- Por exempl:
+- Por exemplo:
 ```bash
 ./restore.sh backup/ghost_20260608_144057.sql
 ```
